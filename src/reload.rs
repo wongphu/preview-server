@@ -93,6 +93,9 @@ fn url_path(root: &Path, path: &Path) -> Option<String> {
 fn is_editor_temp(name: &str) -> bool {
     name.ends_with('~')
         || name.starts_with(".#")
+        // BSD/macOS `sed -i` and JetBrains IDEs save through temp files.
+        || name.starts_with(".!")
+        || name.contains("___jb_")
         || name.ends_with(".swp")
         || name.ends_with(".swx")
         || name == "4913"
@@ -152,5 +155,7 @@ mod tests {
         assert_eq!(url_path(root, Path::new("/site/node_modules/x/y.js")), None);
         assert_eq!(url_path(root, Path::new("/site/index.html~")), None);
         assert_eq!(url_path(root, Path::new("/site/.index.html.swp")), None);
+        assert_eq!(url_path(root, Path::new("/site/css/.!48301!style.css")), None);
+        assert_eq!(url_path(root, Path::new("/site/a.html___jb_tmp___")), None);
     }
 }
