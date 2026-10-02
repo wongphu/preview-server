@@ -36,3 +36,7 @@ the URL paths of changed files (debounced by 100ms). Changes under `.git/` and
 
 All responses carry `Cache-Control: no-cache`. Requests that resolve outside the
 served directory, including through symlinks, return 404.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
