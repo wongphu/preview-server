@@ -2,7 +2,7 @@ mod listing;
 mod reload;
 mod server;
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -25,8 +25,8 @@ struct Args {
     #[arg(short, long, default_value_t = 8080)]
     port: u16,
 
-    /// Address to bind; use 0.0.0.0 to expose on your network
-    #[arg(long, default_value = "127.0.0.1")]
+    /// Address to bind; use 127.0.0.1 to accept only local connections
+    #[arg(long, default_value = "0.0.0.0")]
     host: String,
 
     /// Open the browser after starting
@@ -97,7 +97,10 @@ async fn run(args: Args) -> Result<(), String> {
     println!("Serving {}", root.display());
     println!("  → {url}");
     if addr.ip().is_unspecified() {
-        println!("  (listening on all interfaces)");
+        match network_ip() {
+            Some(ip) => println!("  → http://{} (network)", SocketAddr::new(ip, addr.port())),
+            None => println!("  (listening on all interfaces)"),
+        }
     }
     if args.port != addr.port() {
         println!("  (port {} was busy)", args.port);
@@ -126,7 +129,7 @@ async fn run(args: Args) -> Result<(), String> {
 async fn bind(host: &str, port: u16) -> Result<TcpListener, String> {
     let mut last_err = None;
     for p in port..port.saturating_add(PORT_ATTEMPTS) {
-        match TcpListener::bind((host, p)).await {
+        match try_bind(host, p).await {
             Ok(listener) => return Ok(listener),
             Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => last_err = Some(e),
             Err(e) => return Err(format!("cannot bind {host}:{p}: {e}")),
@@ -137,6 +140,31 @@ async fn bind(host: &str, port: u16) -> Result<TcpListener, String> {
         port.saturating_add(PORT_ATTEMPTS - 1),
         last_err.map(|e| e.to_string()).unwrap_or_default()
     ))
+}
+
+/// Binds `host:port`. For a wildcard host, first checks that loopback is free on
+/// that port: macOS lets the wildcard bind succeed even when another server holds
+/// 127.0.0.1 there, and `localhost` would then reach that server instead of us.
+async fn try_bind(host: &str, port: u16) -> std::io::Result<TcpListener> {
+    if let Ok(ip) = host.parse::<IpAddr>()
+        && ip.is_unspecified()
+    {
+        let loopback: IpAddr = match ip {
+            IpAddr::V4(_) => Ipv4Addr::LOCALHOST.into(),
+            IpAddr::V6(_) => Ipv6Addr::LOCALHOST.into(),
+        };
+        drop(TcpListener::bind((loopback, port)).await?);
+    }
+    TcpListener::bind((host, port)).await
+}
+
+/// The address other machines on the network can most likely reach us at: the
+/// local end of the default route. Connecting a UDP socket sends no packets.
+fn network_ip() -> Option<IpAddr> {
+    let socket = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    socket.connect((Ipv4Addr::new(192, 0, 2, 1), 80)).ok()?;
+    let ip = socket.local_addr().ok()?.ip();
+    (!ip.is_unspecified() && !ip.is_loopback()).then_some(ip)
 }
 
 fn display_url(addr: SocketAddr) -> String {
