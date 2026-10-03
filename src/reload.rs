@@ -24,34 +24,43 @@ const IGNORED_DIRS: &[&str] = &[".git", "node_modules"];
 pub fn watch(
     root: &Path,
     log: bool,
-) -> Result<(broadcast::Sender<Vec<String>>, Debouncer<RecommendedWatcher>), String> {
+) -> Result<
+    (
+        broadcast::Sender<Vec<String>>,
+        Debouncer<RecommendedWatcher>,
+    ),
+    String,
+> {
     let (tx, _) = broadcast::channel(16);
     let sender = tx.clone();
     let base = root.to_path_buf();
 
-    let mut debouncer = new_debouncer(Duration::from_millis(100), move |res: DebounceEventResult| {
-        let events = match res {
-            Ok(events) => events,
-            Err(e) => {
-                eprintln!("watch error: {e}");
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(100),
+        move |res: DebounceEventResult| {
+            let events = match res {
+                Ok(events) => events,
+                Err(e) => {
+                    eprintln!("watch error: {e}");
+                    return;
+                }
+            };
+            let mut paths: Vec<String> = events
+                .iter()
+                .filter_map(|e| url_path(&base, &e.path))
+                .collect();
+            paths.sort();
+            paths.dedup();
+            if paths.is_empty() {
                 return;
             }
-        };
-        let mut paths: Vec<String> = events
-            .iter()
-            .filter_map(|e| url_path(&base, &e.path))
-            .collect();
-        paths.sort();
-        paths.dedup();
-        if paths.is_empty() {
-            return;
-        }
-        if log {
-            println!("changed: {}", paths.join(", "));
-        }
-        // An error only means no browser is connected right now.
-        let _ = sender.send(paths);
-    })
+            if log {
+                println!("changed: {}", paths.join(", "));
+            }
+            // An error only means no browser is connected right now.
+            let _ = sender.send(paths);
+        },
+    )
     .map_err(|e| format!("cannot start file watcher: {e}"))?;
 
     debouncer
@@ -120,7 +129,10 @@ pub async fn events(
 }
 
 pub async fn client_script() -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], CLIENT_JS)
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        CLIENT_JS,
+    )
 }
 
 /// Insert the reload script before the last `</body>`, or append it.
@@ -150,12 +162,18 @@ mod tests {
     #[test]
     fn maps_and_filters_paths() {
         let root = Path::new("/site");
-        assert_eq!(url_path(root, Path::new("/site/css/a.css")).as_deref(), Some("/css/a.css"));
+        assert_eq!(
+            url_path(root, Path::new("/site/css/a.css")).as_deref(),
+            Some("/css/a.css")
+        );
         assert_eq!(url_path(root, Path::new("/site/.git/index")), None);
         assert_eq!(url_path(root, Path::new("/site/node_modules/x/y.js")), None);
         assert_eq!(url_path(root, Path::new("/site/index.html~")), None);
         assert_eq!(url_path(root, Path::new("/site/.index.html.swp")), None);
-        assert_eq!(url_path(root, Path::new("/site/css/.!48301!style.css")), None);
+        assert_eq!(
+            url_path(root, Path::new("/site/css/.!48301!style.css")),
+            None
+        );
         assert_eq!(url_path(root, Path::new("/site/a.html___jb_tmp___")), None);
     }
 }

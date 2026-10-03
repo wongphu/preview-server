@@ -180,7 +180,10 @@ mod tests {
         assert!(resolve(&root, "/../etc/passwd").is_none());
         assert!(resolve(&root, "/a/%2e%2e/%2e%2e/etc").is_none());
         assert!(resolve(&root, "/a\\..\\b").is_none());
-        assert_eq!(resolve(&root, "/a/./b%20c"), Some(root.join("a").join("b c")));
+        assert_eq!(
+            resolve(&root, "/a/./b%20c"),
+            Some(root.join("a").join("b c"))
+        );
     }
 
     #[test]

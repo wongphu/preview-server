@@ -132,6 +132,9 @@ mod tests {
 
     #[test]
     fn escapes_html() {
-        assert_eq!(escape("<a href=\"x\">&'"), "&lt;a href=&quot;x&quot;&gt;&amp;&#39;");
+        assert_eq!(
+            escape("<a href=\"x\">&'"),
+            "&lt;a href=&quot;x&quot;&gt;&amp;&#39;"
+        );
     }
 }
